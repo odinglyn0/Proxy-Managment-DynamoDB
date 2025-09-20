@@ -25,7 +25,7 @@ func NewGeoNodeClient() *GeoNodeClient {
 }
 
 func (c *GeoNodeClient) FetchProxies(limit int) ([]models.ProxyData, error) {
-    url := fmt.Sprintf("%s?protocols=socks4%%2Csocks5&filterLastChecked=10&speed=fast&limit=%d&page=1&sort_by=lastChecked&sort_type=desc", 
+    url := fmt.Sprintf("%s?protocols=http%%2Chttps%%2Csocks4%%2Csocks5&limit=%d&page=1&sort_by=lastChecked&sort_type=desc",
         c.baseURL, limit)
 
     req, err := http.NewRequest("GET", url, nil)
@@ -33,8 +33,20 @@ func (c *GeoNodeClient) FetchProxies(limit int) ([]models.ProxyData, error) {
         return nil, fmt.Errorf("failed to create request: %v", err)
     }
 
-    req.Header.Set("User-Agent", "Proxy-System/1.0")
-    req.Header.Set("Accept", "application/json")
+    req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36")
+    req.Header.Set("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8")
+    req.Header.Set("Cache-Control", "no-cache")
+    req.Header.Set("Pragma", "no-cache")
+    req.Header.Set("Priority", "u=0, i")
+    req.Header.Set("Sec-CH-UA", `"Chromium";v="140", "Not=A?Brand";v="24", "Google Chrome";v="140"`)
+    req.Header.Set("Sec-CH-UA-Mobile", "?0")
+    req.Header.Set("Sec-CH-UA-Platform", `"Windows"`)
+    req.Header.Set("Sec-Fetch-Dest", "document")
+    req.Header.Set("Sec-Fetch-Mode", "navigate")
+    req.Header.Set("Sec-Fetch-Site", "none")
+    req.Header.Set("Sec-Fetch-User", "?1")
+    req.Header.Set("Upgrade-Insecure-Requests", "1")
+
 
     resp, err := c.httpClient.Do(req)
     if err != nil {
@@ -43,7 +55,8 @@ func (c *GeoNodeClient) FetchProxies(limit int) ([]models.ProxyData, error) {
     defer resp.Body.Close()
 
     if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("API returned status code: %d", resp.StatusCode)
+        body, _ := io.ReadAll(resp.Body)
+        return nil, fmt.Errorf("API returned status code: %d, body: %s", resp.StatusCode, string(body))
     }
 
     body, err := io.ReadAll(resp.Body)
@@ -65,7 +78,7 @@ func (c *GeoNodeClient) FetchProxies(limit int) ([]models.ProxyData, error) {
 
     var proxyResponse models.ProxyResponse
     if err := json.Unmarshal(body[jsonStart:], &proxyResponse); err != nil {
-        return nil, fmt.Errorf("failed to unmarshal response: %v", err)
+        return nil, fmt.Errorf("failed to unmarshal response: %v, body: %s", err, string(body[jsonStart:]))
     }
 
     return proxyResponse.Data, nil

@@ -62,7 +62,7 @@ Set the following environment variables:
 - `AWS_SECRET_ACCESS_KEY` (required): AWS secret access key
 - `DYNAMODB_TABLE_NAME` (required): DynamoDB table name for storing proxies
 - `AWS_REGION` (optional): AWS region (defaults to eu-west-1)
-- `PROXY_LIMIT` (optional): Maximum number of proxies to fetch (defaults to 500)
+- `PROXY_LIMIT` (optional): Maximum number of proxies to fetch (defaults to 500, the max is 500)
 
 ## License
 
