@@ -25,7 +25,7 @@ func NewGeoNodeClient() *GeoNodeClient {
 }
 
 func (c *GeoNodeClient) FetchProxies(limit int) ([]models.ProxyData, error) {
-    url := fmt.Sprintf("%s?protocols=socks5%%2Csocks4&filterLastChecked=10&speed=fast&limit=%d&page=1&sort_by=lastChecked&sort_type=desc", 
+    url := fmt.Sprintf("%s?protocols=socks4%%2Csocks5&filterLastChecked=10&speed=fast&limit=%d&page=1&sort_by=lastChecked&sort_type=desc", 
         c.baseURL, limit)
 
     req, err := http.NewRequest("GET", url, nil)

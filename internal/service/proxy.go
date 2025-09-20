@@ -52,22 +52,30 @@ func (s *ProxyService) Start(ctx context.Context) error {
     }
 
     for {
-        select {
-        case <-ctx.Done():
-            log.Println("Proxy service stopping...")
-            if timer != nil {
-                timer.Stop()
+        if timer == nil {
+            select {
+            case <-ctx.Done():
+                log.Println("Proxy service stopping...")
+                return ctx.Err()
             }
-            return ctx.Err()
-        case <-timer.C:
-            successful, err := s.updateProxies()
-            if err != nil {
-                log.Printf("Failed to update proxies: %v", err)
-            } else if successful {
-                log.Printf("Update successful, scheduling next in 1 minute")
-                timer.Reset(s.config.UpdateInterval)
-            } else {
-                log.Println("Update had no changes, not scheduling next")
+        } else {
+            select {
+            case <-ctx.Done():
+                log.Println("Proxy service stopping...")
+                timer.Stop()
+                return ctx.Err()
+            case <-timer.C:
+                successful, err := s.updateProxies()
+                if err != nil {
+                    log.Printf("Failed to update proxies: %v", err)
+                } else if successful {
+                    log.Printf("Update successful, scheduling next in 1 minute")
+                    timer.Reset(s.config.UpdateInterval)
+                } else {
+                    log.Println("Update had no changes, not scheduling next")
+                    timer.Stop()
+                    timer = nil
+                }
             }
         }
     }
