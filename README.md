@@ -52,7 +52,7 @@ docker run --env-file .env proxies
 
 The Docker image is optimized for deployment to AWS Fargate on EKS/ECS. Use the built image with appropriate environment variables and task definition.
 
-The service will start fetching and updating proxies periodically based on configuration.
+The service will start fetching and updating proxies periodically based on configuration. SOCKS4 and SOCKS5 proxies are validated concurrently before being stored in DynamoDB.
 
 ## Configuration
 

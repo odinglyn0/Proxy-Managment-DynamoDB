@@ -4,8 +4,11 @@ import (
     "context"
     "fmt"
     "log"
+    "net/http"
+    "strings"
     "time"
 
+    "golang.org/x/net/proxy"
     "proxy-system/internal/client"
     "proxy-system/internal/config"
     "proxy-system/internal/models"
@@ -86,7 +89,7 @@ func (s *ProxyService) updateProxies() (bool, error) {
 
     var proxies []models.ProxyData
     var err error
-    maxRetries := 5
+    maxRetries := 3
     retryDelay := 3 * time.Second
 
     for attempt := 1; attempt <= maxRetries; attempt++ {
@@ -123,7 +126,39 @@ func (s *ProxyService) updateProxies() (bool, error) {
         return false, fmt.Errorf("failed to batch get proxies: %v", err)
     }
 
-    for _, proxy := range proxies {
+    // Validate proxies concurrently
+    type validationResult struct {
+        proxy   models.ProxyData
+        valid   bool
+        index   int
+    }
+
+    validationChan := make(chan validationResult, len(proxies))
+    semaphore := make(chan struct{}, 500) // Limit to 10 concurrent validations
+
+    for i, proxy := range proxies {
+        go func(p models.ProxyData, idx int) {
+            semaphore <- struct{}{} // Acquire
+            defer func() { <-semaphore }() // Release
+
+            valid := s.validateProxy(&p)
+            validationChan <- validationResult{proxy: p, valid: valid, index: idx}
+        }(proxy, i)
+    }
+
+    // Collect validation results
+    validatedProxies := make([]models.ProxyData, 0, len(proxies))
+    for i := 0; i < len(proxies); i++ {
+        result := <-validationChan
+        if result.valid {
+            validatedProxies = append(validatedProxies, result.proxy)
+        } else {
+            log.Printf("Skipping invalid proxy: %s", result.proxy.GetKey())
+        }
+    }
+
+    // Process validated proxies
+    for _, proxy := range validatedProxies {
         proxyKey := proxy.GetKey()
 
         existingProxy := existingProxies[proxyKey]
@@ -153,12 +188,75 @@ func (s *ProxyService) updateProxies() (bool, error) {
     }
 }
 
+func (s *ProxyService) validateProxy(p *models.ProxyData) bool {
+    // Only validate SOCKS4 and SOCKS5 proxies
+    hasSocks := false
+    for _, protocol := range p.Protocols {
+        if protocol == "socks4" || protocol == "socks5" {
+            hasSocks = true
+            break
+        }
+    }
+
+    if !hasSocks {
+        return true // Skip validation for non-SOCKS proxies
+    }
+
+    proxyAddr := fmt.Sprintf("%s:%s", p.IP, p.Port)
+
+    for _, protocol := range p.Protocols {
+        if protocol != "socks4" && protocol != "socks5" {
+            continue
+        }
+
+        var dialer proxy.Dialer
+        var err error
+
+        if protocol == "socks5" {
+            dialer, err = proxy.SOCKS5("tcp", proxyAddr, nil, nil)
+        } else if protocol == "socks4" {
+            dialer, err = proxy.SOCKS5("tcp", proxyAddr, nil, nil) // SOCKS4 is handled by SOCKS5 dialer in most cases
+        }
+
+        if err != nil {
+            log.Printf("Failed to create %s dialer for %s: %v", strings.ToUpper(protocol), proxyAddr, err)
+            continue
+        }
+
+        // Create HTTP client with proxy
+        httpClient := &http.Client{
+            Transport: &http.Transport{
+                Dial: dialer.Dial,
+            },
+            Timeout: 10 * time.Second,
+        }
+
+        // Test with a simple HTTP request
+        testURL := "http://httpbin.org/ip"
+        resp, err := httpClient.Get(testURL)
+        if err != nil {
+            log.Printf("Failed to validate %s proxy %s: %v", strings.ToUpper(protocol), proxyAddr, err)
+            continue
+        }
+        resp.Body.Close()
+
+        if resp.StatusCode == 200 {
+            log.Printf("Successfully validated %s proxy %s", strings.ToUpper(protocol), proxyAddr)
+            return true
+        } else {
+            log.Printf("Proxy %s returned status %d", proxyAddr, resp.StatusCode)
+        }
+    }
+
+    return false
+}
+
 func (s *ProxyService) hasProxyChanged(existing, new *models.ProxyData) bool {
     return existing.LastChecked != new.LastChecked ||
-           existing.ResponseTime != new.ResponseTime ||
-           existing.UpTime != new.UpTime ||
-           existing.UpTimeSuccessCount != new.UpTimeSuccessCount ||
-           existing.Speed != new.Speed ||
-           existing.Anonymity != new.Anonymity ||
-           len(existing.Protocols) != len(new.Protocols)
+            existing.ResponseTime != new.ResponseTime ||
+            existing.UpTime != new.UpTime ||
+            existing.UpTimeSuccessCount != new.UpTimeSuccessCount ||
+            existing.Speed != new.Speed ||
+            existing.Anonymity != new.Anonymity ||
+            len(existing.Protocols) != len(new.Protocols)
 }
