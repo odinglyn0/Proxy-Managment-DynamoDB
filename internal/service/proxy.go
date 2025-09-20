@@ -84,9 +84,25 @@ func (s *ProxyService) Start(ctx context.Context) error {
 func (s *ProxyService) updateProxies() (bool, error) {
     log.Printf("Fetching proxies from API (limit: %d)...", s.config.ProxyLimit)
 
-    proxies, err := s.client.FetchProxies(s.config.ProxyLimit)
-    if err != nil {
-        return false, err
+    var proxies []models.ProxyData
+    var err error
+    maxRetries := 5
+    retryDelay := 3 * time.Second
+
+    for attempt := 1; attempt <= maxRetries; attempt++ {
+        proxies, err = s.client.FetchProxies(s.config.ProxyLimit)
+        if err == nil {
+            break
+        }
+
+        if attempt < maxRetries {
+            log.Printf("Failed to fetch proxies (attempt %d/%d): %v. Retrying in %v...",
+                attempt, maxRetries, err, retryDelay)
+            time.Sleep(retryDelay)
+        } else {
+            log.Printf("Failed to fetch proxies after %d attempts: %v", maxRetries, err)
+            return false, err
+        }
     }
 
     log.Printf("Fetched %d proxies from API", len(proxies))
